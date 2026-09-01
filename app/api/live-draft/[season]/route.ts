@@ -82,7 +82,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ season: st
     const s: LiveState = JSON.parse(JSON.stringify(draft.state));
     const maxRounds = s.teams.length ? Math.floor(s.cast.length / s.teams.length) : 0;
     const now = Date.now();
-    const freshDeadline = () => new Date(now + s.clockSecs * 1000).toISOString();
+    // lead = seconds the clock is padded so devices can play the pick/turn
+    // announcements before the countdown visibly starts (clients clamp the
+    // displayed clock to clockSecs, so the pad reads as a hold at full time)
+    const deadlineIn = (leadSecs: number) => new Date(now + (leadSecs + s.clockSecs) * 1000).toISOString();
 
     switch (action) {
       case 'configure': {
@@ -107,7 +110,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ season: st
       case 'start': {
         if (s.phase !== 'setup') return fail('draft already started');
         if (!s.order.length) return fail('generate a draft order first');
-        s.phase = 'drafting'; s.deadline = freshDeadline(); s.pausedRemaining = null;
+        s.phase = 'drafting'; s.deadline = deadlineIn(3); s.pausedRemaining = null;
         break;
       }
       case 'pick': {
@@ -126,7 +129,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ season: st
           contestant,
         });
         if (s.picks.length >= s.rounds * s.teams.length) { s.phase = 'done'; s.deadline = null; }
-        else { s.deadline = freshDeadline(); }
+        else { s.deadline = deadlineIn(5); }
         s.pausedRemaining = null;
         break;
       }
@@ -134,7 +137,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ season: st
         if (!s.picks.length) return fail('nothing to undo');
         s.picks.pop();
         if (s.phase === 'done') s.phase = 'drafting';
-        s.deadline = freshDeadline(); s.pausedRemaining = null;
+        s.deadline = deadlineIn(3); s.pausedRemaining = null;
         break;
       }
       case 'pause': {
