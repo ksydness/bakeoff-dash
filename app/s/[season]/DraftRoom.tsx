@@ -29,7 +29,7 @@ interface LiveState {
 }
 interface LiveDraft { season: number; state: LiveState; version: number; }
 
-type Role = { kind: 'commish' } | { kind: 'team'; index: number } | { kind: 'watch' };
+type Role = { kind: 'commish'; teamIndex: number | null } | { kind: 'team'; index: number } | { kind: 'watch' };
 
 export default function DraftRoom({ season }: { season: number }) {
   const [configured, setConfigured] = useState(true);
@@ -42,6 +42,7 @@ export default function DraftRoom({ season }: { season: number }) {
   const [muted, setMuted] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [splash, setSplash] = useState<LivePick | null>(null);
+  const [turnSplash, setTurnSplash] = useState(false);
 
   const splashTimer = useRef<number | null>(null);
   const noticeTimer = useRef<number | null>(null);
@@ -50,6 +51,8 @@ export default function DraftRoom({ season }: { season: number }) {
   const prevPicksLen = useRef<number | null>(null);
   const prevPhase = useRef<string | null>(null);
   const prevSecs = useRef<number | null>(null);
+  const prevOnClock = useRef<number | null>(null);
+  const turnTimers = useRef<number[]>([]);
   const createdOnce = useRef(false);
 
   const roleKey = `bakeoff-live-role-s${season}`;
@@ -59,11 +62,14 @@ export default function DraftRoom({ season }: { season: number }) {
   useEffect(() => {
     try {
       const urlKey = new URLSearchParams(window.location.search).get('key');
-      if (urlKey) { localStorage.setItem(keyKey, urlKey); localStorage.setItem(roleKey, 'commish'); }
+      if (urlKey) localStorage.setItem(keyKey, urlKey);
       const storedKey = localStorage.getItem(keyKey) || '';
       setCommishKey(storedKey);
       const r = localStorage.getItem(roleKey);
-      if (r === 'commish' && storedKey) setRole({ kind: 'commish' });
+      if (r?.startsWith('commish') && storedKey) {
+        const t = r.includes(':') ? parseInt(r.split(':')[1], 10) : NaN;
+        setRole({ kind: 'commish', teamIndex: isNaN(t) ? null : t });
+      }
       else if (r === 'watch') setRole({ kind: 'watch' });
       else if (r?.startsWith('t')) { const i = parseInt(r.slice(1), 10); if (!isNaN(i)) setRole({ kind: 'team', index: i }); }
     } catch { /* ignore */ }
@@ -73,7 +79,7 @@ export default function DraftRoom({ season }: { season: number }) {
     setRole(r);
     try {
       if (!r) localStorage.removeItem(roleKey);
-      else localStorage.setItem(roleKey, r.kind === 'team' ? `t${r.index}` : r.kind);
+      else localStorage.setItem(roleKey, r.kind === 'team' ? `t${r.index}` : r.kind === 'commish' ? (r.teamIndex != null ? `commish:${r.teamIndex}` : 'commish') : 'watch');
     } catch { /* ignore */ }
   }
 
@@ -131,12 +137,12 @@ export default function DraftRoom({ season }: { season: number }) {
 
   const isCommish = role?.kind === 'commish';
 
-  useEffect(() => { // commissioner auto-creates the draft row
-    if (isCommish && configured && loaded && !draft && !createdOnce.current) {
+  useEffect(() => { // the commissioner's device auto-creates the draft row
+    if (commishKey && configured && loaded && !draft && !createdOnce.current) {
       createdOnce.current = true;
       act('create');
     }
-  }, [isCommish, configured, loaded, draft, act]);
+  }, [commishKey, configured, loaded, draft, act]);
 
   // ── derived state ──
   const s = draft?.state;
@@ -164,8 +170,20 @@ export default function DraftRoom({ season }: { season: number }) {
   const draftedNames = useMemo(() => new Set(picks.map(p => p.contestant)), [picks]);
   const available = useMemo(() => cast.filter(c => !draftedNames.has(c)), [cast, draftedNames]);
 
-  const myTurn = phase === 'drafting' && !paused &&
-    ((role?.kind === 'team' && role.index === onClockTeam) || isCommish);
+  const myTeamIndex = role?.kind === 'team' ? role.index : role?.kind === 'commish' ? (role.teamIndex ?? -1) : -1;
+  const myTurn = phase === 'drafting' && !paused && (myTeamIndex === onClockTeam || isCommish);
+
+  // overall index of this device's team's next pick (-1 = none left)
+  const myNextPick = useMemo(() => {
+    if (phase !== 'drafting' || myTeamIndex < 0 || !teams.length) return -1;
+    for (let i = overall; i < totalPicks; i++) {
+      const round = Math.floor(i / teams.length);
+      const pos = i % teams.length;
+      const ro = round % 2 === 0 ? order : [...order].reverse();
+      if (ro[pos] === myTeamIndex) return i;
+    }
+    return -1;
+  }, [phase, myTeamIndex, teams.length, overall, totalPicks, order]);
 
   // shared clock: everyone computes from the same stored deadline
   const secondsLeft = useMemo(() => {
@@ -228,6 +246,22 @@ export default function DraftRoom({ season }: { season: number }) {
     prevPhase.current = phase;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
+
+  useEffect(() => { // "you're on the clock" splash, only on this team's device
+    const clearTurn = () => { turnTimers.current.forEach(t => clearTimeout(t)); turnTimers.current = []; };
+    if (phase === 'drafting' && myTeamIndex >= 0 && onClockTeam === myTeamIndex && prevOnClock.current !== onClockTeam) {
+      clearTurn();
+      const delay = overall > 0 ? 2600 : 400; // let the pick announcement finish first
+      turnTimers.current.push(window.setTimeout(() => {
+        setTurnSplash(true);
+        beep(784, 0.12, 'triangle', 0.2); setTimeout(() => beep(1047, 0.2, 'triangle', 0.2), 120);
+        turnTimers.current.push(window.setTimeout(() => setTurnSplash(false), 2200));
+      }, delay));
+    }
+    if (phase !== 'drafting' || onClockTeam !== myTeamIndex) { clearTurn(); setTurnSplash(false); }
+    prevOnClock.current = onClockTeam;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onClockTeam, phase, myTeamIndex]);
 
   // ── commissioner actions ──
   function rollOrder() {
@@ -293,19 +327,24 @@ export default function DraftRoom({ season }: { season: number }) {
     return (
       <Shell sub="Live Snake Draft">
         <div className="panel center">
-          <h2>Who are you?</h2>
-          {draft ? (
-            <p className="dim">Pick your team — you’ll draft from this device when you’re on the clock.</p>
+          <h2>{commishKey ? 'Commissioner — pick your team' : 'Pick your team'}</h2>
+          {commishKey ? (
+            <p className="dim">You’ll draft like everyone else when your team is on the clock, with commissioner controls on top.</p>
+          ) : draft ? (
+            <p className="dim">Your team drafts from this device when it’s on the clock.</p>
           ) : (
-            <p className="dim">The commissioner hasn’t opened this draft yet. You can still choose your team and wait here.</p>
+            <p className="dim">The commissioner hasn’t opened this draft yet. You can still pick your team and wait here.</p>
           )}
           <div className="lobby">
             {teams.map((t, i) => (
-              <button key={t} className="btn lobbybtn" onClick={() => chooseRole({ kind: 'team', index: i })}>
-                <span className="dot lg" style={{ background: colorFor(t, i) }} />I’m {t}
+              <button key={t} className="btn lobbybtn"
+                onClick={() => chooseRole(commishKey ? { kind: 'commish', teamIndex: i } : { kind: 'team', index: i })}>
+                <span className="dot lg" style={{ background: colorFor(t, i) }} />{t}
               </button>
             ))}
-            <button className="btn ghost" onClick={() => chooseRole({ kind: 'watch' })}>👀 Just watching</button>
+            {commishKey
+              ? <button className="btn ghost" onClick={() => chooseRole({ kind: 'commish', teamIndex: null })}>🎛 No team — just commissioner</button>
+              : <button className="btn ghost" onClick={() => chooseRole({ kind: 'watch' })}>👀 Just watching</button>}
           </div>
           {!teams.length && <p className="dim small">Waiting for the draft to be created to show the teams…</p>}
         </div>
@@ -313,7 +352,10 @@ export default function DraftRoom({ season }: { season: number }) {
     );
   }
 
-  const roleLabel = role.kind === 'commish' ? <>🎛 Commissioner</>
+  const roleLabel = role.kind === 'commish'
+    ? (role.teamIndex != null
+        ? <>🎛 <span className="dot" style={{ background: colorFor(teams[role.teamIndex] ?? '', role.teamIndex) }} /> {teams[role.teamIndex] ?? 'Commissioner'}</>
+        : <>🎛 Commissioner</>)
     : role.kind === 'watch' ? <>👀 Watching</>
     : <><span className="dot" style={{ background: colorFor(teams[role.index] ?? '', role.index) }} /> {teams[role.index] ?? 'Team'}</>;
 
@@ -327,6 +369,16 @@ export default function DraftRoom({ season }: { season: number }) {
             <div className="sp-label">Round {splash.round} · Pick {splash.overall + 1}</div>
             <div className="sp-team" style={{ color: colorFor(teams[splash.teamIndex], splash.teamIndex) }}>{teams[splash.teamIndex]}</div>
             <div className="sp-name">{splash.contestant}</div>
+          </div>
+        </div>
+      )}
+
+      {turnSplash && !splash && (
+        <div className="splash" key={`turn-${overall}`}>
+          <div className="splashcard" style={{ borderColor: colorFor(teams[myTeamIndex] ?? '', myTeamIndex) }}>
+            <div className="sp-label">Round {currentRound} · Pick {overall + 1}</div>
+            <div className="sp-team" style={{ color: colorFor(teams[myTeamIndex] ?? '', myTeamIndex) }}>{teams[myTeamIndex]}</div>
+            <div className="sp-name">You’re on the clock!</div>
           </div>
         </div>
       )}
@@ -350,6 +402,14 @@ export default function DraftRoom({ season }: { season: number }) {
       </div>
 
       {notice && <div className="noticebar">{notice}</div>}
+
+      {phase === 'drafting' && myTeamIndex >= 0 && onClockTeam !== myTeamIndex && (
+        <div className="upnext">
+          {myNextPick >= 0
+            ? <>Your next pick: <b>#{myNextPick + 1}</b> · {myNextPick - overall} pick{myNextPick - overall === 1 ? '' : 's'} away</>
+            : <>All of {teams[myTeamIndex]}’s picks are in.</>}
+        </div>
+      )}
 
       {!draft && (
         <div className="panel center">
@@ -426,7 +486,7 @@ export default function DraftRoom({ season }: { season: number }) {
       {phase === 'drafting' && (
         <div className="panel">
           <h2>Available ({available.length})</h2>
-          {isCommish && onClockTeam >= 0 && <p className="dim small" style={{ marginTop: 0, marginBottom: 10 }}>Commissioner: tapping drafts for {teams[onClockTeam]}.</p>}
+          {isCommish && onClockTeam >= 0 && onClockTeam !== myTeamIndex && <p className="dim small" style={{ marginTop: 0, marginBottom: 10 }}>Commissioner: tapping drafts for {teams[onClockTeam]}.</p>}
           {role.kind === 'team' && !myTurn && <p className="dim small" style={{ marginTop: 0, marginBottom: 10 }}>{paused ? 'Draft is paused.' : 'Buttons unlock when you’re on the clock.'}</p>}
           <div className="pool">
             {available.map(name => (
@@ -542,6 +602,7 @@ const CSS = `
 .bar{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .rolebadge{display:inline-flex;align-items:center;gap:7px;background:#262220;border:1px solid #2f2a27;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:700}
 .noticebar{text-align:center;background:#3a2a20;border:1px solid #7c5a2b;color:#fcd34d;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;margin-bottom:14px}
+.upnext{text-align:center;color:#a8a29e;font-size:13px;font-weight:600;margin:-2px 0 14px}
 .lobby{display:grid;gap:10px;max-width:340px;margin:16px auto 0}
 .lobbybtn{display:flex;align-items:center;justify-content:center;gap:10px;font-size:16px;padding:14px 18px}
 .panel{background:#1c1917;border:1px solid #2f2a27;border-radius:16px;padding:20px;margin-bottom:16px}
