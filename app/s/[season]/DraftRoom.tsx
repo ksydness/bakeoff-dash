@@ -51,7 +51,6 @@ export default function DraftRoom({ season }: { season: number }) {
   const prevPicksLen = useRef<number | null>(null);
   const prevPhase = useRef<string | null>(null);
   const prevSecs = useRef<number | null>(null);
-  const prevOnClock = useRef<number | null>(null);
   const turnTimers = useRef<number[]>([]);
   const createdOnce = useRef(false);
 
@@ -192,6 +191,11 @@ export default function DraftRoom({ season }: { season: number }) {
     return Math.max(0, Math.ceil((new Date(s.deadline).getTime() - now) / 1000));
   }, [phase, s?.deadline, s?.pausedRemaining, clockSecs, now]);
 
+  // the server pads each deadline with a few "announcement" seconds; hold the
+  // displayed clock at full until that lead has run down, so nobody loses time
+  // to the splash screens
+  const displaySecs = Math.min(secondsLeft, clockSecs);
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 300);
     return () => clearInterval(id);
@@ -216,15 +220,15 @@ export default function DraftRoom({ season }: { season: number }) {
   const fanfare = () => { [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.22, 'triangle', 0.2), i * 140)); };
 
   useEffect(() => { // countdown ticks + buzzer, from the shared clock
-    if (phase !== 'drafting' || paused) { prevSecs.current = secondsLeft; return; }
+    if (phase !== 'drafting' || paused) { prevSecs.current = displaySecs; return; }
     const prev = prevSecs.current;
-    if (prev !== null && secondsLeft < prev) {
-      if (secondsLeft > 0 && secondsLeft <= 10) tick();
-      if (secondsLeft === 0 && prev > 0) buzzer();
+    if (prev !== null && displaySecs < prev) {
+      if (displaySecs > 0 && displaySecs <= 10) tick();
+      if (displaySecs === 0 && prev > 0) buzzer();
     }
-    prevSecs.current = secondsLeft;
+    prevSecs.current = displaySecs;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [secondsLeft, phase, paused]);
+  }, [displaySecs, phase, paused]);
 
   useEffect(() => { // new pick arriving (from any device) → ding + splash
     const len = picks.length;
@@ -249,19 +253,20 @@ export default function DraftRoom({ season }: { season: number }) {
 
   useEffect(() => { // "you're on the clock" splash, only on this team's device
     const clearTurn = () => { turnTimers.current.forEach(t => clearTimeout(t)); turnTimers.current = []; };
-    if (phase === 'drafting' && myTeamIndex >= 0 && onClockTeam === myTeamIndex && prevOnClock.current !== onClockTeam) {
-      clearTurn();
+    clearTurn();
+    if (phase === 'drafting' && myTeamIndex >= 0 && onClockTeam === myTeamIndex) {
+      // keyed on `overall` too, so a snake double-pick announces the second turn as well
       const delay = overall > 0 ? 2600 : 400; // let the pick announcement finish first
       turnTimers.current.push(window.setTimeout(() => {
         setTurnSplash(true);
         beep(784, 0.12, 'triangle', 0.2); setTimeout(() => beep(1047, 0.2, 'triangle', 0.2), 120);
         turnTimers.current.push(window.setTimeout(() => setTurnSplash(false), 2200));
       }, delay));
+    } else {
+      setTurnSplash(false);
     }
-    if (phase !== 'drafting' || onClockTeam !== myTeamIndex) { clearTurn(); setTurnSplash(false); }
-    prevOnClock.current = onClockTeam;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClockTeam, phase, myTeamIndex]);
+  }, [onClockTeam, overall, phase, myTeamIndex]);
 
   // ── commissioner actions ──
   function rollOrder() {
@@ -406,7 +411,7 @@ export default function DraftRoom({ season }: { season: number }) {
       {phase === 'drafting' && myTeamIndex >= 0 && onClockTeam !== myTeamIndex && (
         <div className="upnext">
           {myNextPick >= 0
-            ? <>Your next pick: <b>#{myNextPick + 1}</b> · {myNextPick - overall} pick{myNextPick - overall === 1 ? '' : 's'} away</>
+            ? <>Your next pick: <b>{myNextPick - overall} pick{myNextPick - overall === 1 ? '' : 's'} away</b></>
             : <>All of {teams[myTeamIndex]}’s picks are in.</>}
         </div>
       )}
@@ -469,8 +474,8 @@ export default function DraftRoom({ season }: { season: number }) {
               {teams[onClockTeam]} <span className="dim"> is on the clock</span>
             </div>
           </div>
-          <div className={`clock ${!paused && secondsLeft <= 10 ? 'warn' : ''} ${!paused && secondsLeft === 0 ? 'zero' : ''}`}>
-            {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')}
+          <div className={`clock ${!paused && displaySecs <= 10 ? 'warn' : ''} ${!paused && displaySecs === 0 ? 'zero' : ''}`}>
+            {Math.floor(displaySecs / 60)}:{String(displaySecs % 60).padStart(2, '0')}
           </div>
         </div>
       )}
