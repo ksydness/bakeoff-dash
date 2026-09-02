@@ -1,10 +1,11 @@
-// Server-side store for the live (multi-device) draft. One row per season in
-// the dedicated Supabase project; all writes come through the API route using
+// Server-side store for the live (multi-device) draft. One row per (league,
+// season) in the shared Supabase project; all writes come through the API route using
 // the service role key (RLS blocks everyone else). The Google Sheet remains
 // the source of truth for scoring — this table only holds in-progress draft
 // state, and the finished draft still gets pasted into the sheet by hand.
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { LEAGUE, SUPABASE_URL } from './draftConfig';
 
 export interface LivePick { overall: number; round: number; teamIndex: number; contestant: string; }
 
@@ -23,14 +24,14 @@ export interface LiveState {
 export interface LiveDraft { season: number; state: LiveState; version: number; }
 
 export function liveDraftConfigured(): boolean {
-  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+  return !!process.env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
 let admin: SupabaseClient | null = null;
 function db(): SupabaseClient {
   if (!admin) {
     admin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { persistSession: false } },
     );
@@ -40,7 +41,7 @@ function db(): SupabaseClient {
 
 export async function getLiveDraft(season: number): Promise<LiveDraft | null> {
   const { data, error } = await db().from('drafts')
-    .select('season,state,version').eq('season', season).maybeSingle();
+    .select('season,state,version').eq('league', LEAGUE).eq('season', season).maybeSingle();
   if (error) throw new Error(error.message);
   return (data as LiveDraft | null) ?? null;
 }
@@ -48,7 +49,7 @@ export async function getLiveDraft(season: number): Promise<LiveDraft | null> {
 /** Insert a fresh draft row. Returns null if one already exists. */
 export async function insertLiveDraft(season: number, state: LiveState): Promise<LiveDraft | null> {
   const { data, error } = await db().from('drafts')
-    .insert({ season, state, version: 0 })
+    .insert({ league: LEAGUE, season, state, version: 0 })
     .select('season,state,version').maybeSingle();
   if (error) {
     if ((error as { code?: string }).code === '23505') return null; // row already exists
@@ -61,7 +62,7 @@ export async function insertLiveDraft(season: number, state: LiveState): Promise
 export async function updateLiveDraft(season: number, state: LiveState, expectedVersion: number): Promise<LiveDraft | null> {
   const { data, error } = await db().from('drafts')
     .update({ state, version: expectedVersion + 1, updated_at: new Date().toISOString() })
-    .eq('season', season).eq('version', expectedVersion)
+    .eq('league', LEAGUE).eq('season', season).eq('version', expectedVersion)
     .select('season,state,version').maybeSingle();
   if (error) throw new Error(error.message);
   return (data as LiveDraft | null) ?? null;
