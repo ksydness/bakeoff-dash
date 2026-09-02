@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { LEAGUE, SUPABASE_URL, SUPABASE_ANON_KEY } from '@/lib/draftConfig';
 
 // ── team colors (shared with the dashboard) ──
 const PRESET: Record<string, string> = {
@@ -16,9 +17,6 @@ const PRESET: Record<string, string> = {
 };
 const FALLBACK = ['#fb7185', '#f59e0b', '#2dd4bf', '#a78bfa', '#60a5fa', '#f472b6'];
 const colorFor = (t: string, i = 0) => PRESET[t] ?? FALLBACK[i % FALLBACK.length];
-
-const SUPA_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPA_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 interface LivePick { overall: number; round: number; teamIndex: number; contestant: string; }
 interface LiveState {
@@ -97,13 +95,12 @@ export default function DraftRoom({ season }: { season: number }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => { // realtime push
-    if (!SUPA_URL || !SUPA_KEY) return;
-    const client = createClient(SUPA_URL, SUPA_KEY, { auth: { persistSession: false } });
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
     const ch = client.channel(`draft-${season}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drafts', filter: `season=eq.${season}` },
         payload => {
-          const row = payload.new as LiveDraft & { updated_at?: string };
-          if (row && row.state) setDraft(d => (!d || row.version >= d.version) ? { season: row.season, state: row.state, version: row.version } : d);
+          const row = payload.new as LiveDraft & { league?: string; updated_at?: string };
+          if (row && row.state && row.league === LEAGUE) setDraft(d => (!d || row.version >= d.version) ? { season: row.season, state: row.state, version: row.version } : d);
         })
       .subscribe();
     return () => { client.removeChannel(ch); };
@@ -323,7 +320,7 @@ export default function DraftRoom({ season }: { season: number }) {
   }, [picks, order, teams, rounds]);
 
   // ── render ──
-  if (!configured) return <Shell><div className="msg err">The live draft backend isn’t configured yet — the commissioner needs to set the Supabase env vars in Vercel.</div></Shell>;
+  if (!configured) return <Shell><div className="msg err">The live draft backend isn’t configured yet — the commissioner needs to set the Supabase service key in Vercel.</div></Shell>;
   if (error) return <Shell><div className="msg err">Couldn’t load the draft: {error}</div></Shell>;
   if (!loaded) return <Shell><div className="msg">Loading draft…</div></Shell>;
 
