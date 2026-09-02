@@ -34,7 +34,10 @@ the scoring engine. This app is a read-only presentation layer.
    sheet tab, payload fields, and the literal `Top Contestant` / `Top Team` Leaderboard labels
    are unchanged — the parsers match those strings).
 6. **No `future-db/`, no `prototype/`** — those were survivor-specific.
-7. **Draft room localStorage key**: `bakeoff-draft-s<n>`.
+7. **Draft room localStorage keys**: role `bakeoff-live-role-s<n>` (`t<i>`, `watch`, `commish`,
+   `commish:<i>`), commissioner key `bakeoff-commish-key`. `LEAGUE = 'bakeoff'` in
+   `lib/draftConfig.ts` scopes the shared Supabase `drafts` table.
+8. **`package-lock.json` IS committed** here (survivor-dash has none).
 
 ## Everything else (see survivor-dash CLAUDE.md for depth)
 
@@ -47,7 +50,24 @@ the scoring engine. This app is a read-only presentation layer.
   with Status `drafting | active | final`. Add a row = new season. `Teams` = `Lenny|Daegan`.
 - **History-Dash** tab (`Season | Place | Team | Points`) powers the all-time page via
   `HISTORY_CSV_URL`.
-- Env vars: `SEASONS_CSV_URL` (required), `HISTORY_CSV_URL` (optional).
+- Env vars (Vercel dashboard): `SEASONS_CSV_URL` (required), `HISTORY_CSV_URL` (optional),
+  `SUPABASE_SERVICE_ROLE_KEY` + `COMMISSIONER_KEY` (live draft secrets). Public Supabase URL/anon
+  key ship in `lib/draftConfig.ts` (the `NEXT_PUBLIC_SUPABASE_*` vars still set in Vercel are
+  optional overrides).
+- **Live multi-device draft** (built here first, 2026-08-31, then ported to survivor): shared
+  Supabase project **bakeoff-drafts**, table `drafts` keyed `(league, season)`; files
+  `lib/draftConfig.ts`, `lib/liveDraft.ts`, `app/api/live-draft/[season]/route.ts`,
+  `app/s/[season]/DraftRoom.tsx`. Commissioner = `/s/<n>?key=<COMMISSIONER_KEY>`; order can be
+  rolled or set manually (▲/▼). Full behaviour is documented in survivor-dash's CLAUDE.md — the
+  code is identical apart from branding, so **port draft-room changes to both repos**.
+- **Link previews / icons / manifest / 404 / noindex** (2026-09-01/02): `lib/og.tsx`,
+  `app/opengraph-image.tsx`, `app/s/[season]/opengraph-image.tsx`, `app/icon.tsx`,
+  `app/apple-icon.tsx`, `app/icon-512/route.tsx`, `app/manifest.ts`, `app/not-found.tsx`,
+  `app/robots.ts`; `app/layout.tsx` has metadataBase (`https://bakeoff-dash.vercel.app`), OG/Twitter,
+  `robots: noindex`, `themeColor #0c0a09`. Same files as survivor with 🧁 branding.
+- Pushing: GitHub connector `create_or_update_file` with the remote blob sha (from the last push
+  result — local clones are stale); verify the Vercel deploy (`prj_93x8XOiv2zvXUlAoD7PFw0lL7Po2`,
+  team `team_ehXYoYTnX36nTlQX4GkRIbwA`) goes READY.
 - Build config: `vercel.json` must keep `{"framework":"nextjs"}`; `.npmrc` keeps
   `legacy-peer-deps=true`.
 - Parser tolerances (optional Leaderboard, header-optional Contestants, label-based Top rows)
