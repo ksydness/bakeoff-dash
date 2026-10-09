@@ -157,17 +157,21 @@ function Teams({ d }: { d: SeasonPayload }) {
   return (
     <>
       {d.teamTotals.map((t, i) => {
-        const roster = d.contestants.filter(c => c.team === t.team).sort((a, b) => b.total - a.total);
+        // still-in contestants first, eliminated sink to the bottom
+        const roster = d.contestants.filter(c => c.team === t.team)
+          .sort((a, b) => Number(!!a.eliminated) - Number(!!b.eliminated) || b.total - a.total);
         const mx = Math.max(...roster.map(c => c.total), 1);
+        const left = roster.filter(c => !c.eliminated).length;
         return (
           <div key={t.team} className="panel teamcard">
             <h3><span className="sq" style={{ background: colorFor(t.team, i) }} />{t.team}<span className="tot">{t.total}</span></h3>
+            {d.meta.tracks_eliminations && <div className="left">{left} of {roster.length} left</div>}
             <div className="roster">
               {roster.map(c => {
-                const elim = c.total === 0;
+                const elim = !!c.eliminated;
                 return (
-                  <div key={c.name} className="player">
-                    <div className={`pn ${elim ? 'elim' : ''}`}>{c.name}</div>
+                  <div key={c.name} className={`player ${elim ? 'out' : ''}`}>
+                    <div className={`pn ${elim ? 'elim' : ''}`}>{c.name}{elim && d.meta.tracks_eliminations && <small>{c.out_week ? `Out · Wk ${c.out_week}` : 'Out'}</small>}</div>
                     <div className="track"><div className="fill" style={{ width: `${Math.max(2, c.total / mx * 100)}%`, background: colorFor(t.team, i), opacity: elim ? 0.25 : 0.85 }} /></div>
                     <div className="pp">{c.total}</div>
                   </div>
@@ -208,7 +212,7 @@ function Contestants({ d }: { d: SeasonPayload }) {
         </tr></thead>
         <tbody>{rows.map(c => (
           <tr key={c.name}>
-            <td className={c.total === 0 ? 'elim' : ''}>{c.name}</td>
+            <td className={c.eliminated ? 'elim' : ''}>{c.name}</td>
             <td><span className="teamtag"><span className="dot" style={{ background: colorFor(c.team) }} />{c.team}</span></td>
             <td className="num">{c.best}</td>
             <td className="num"><b>{c.total}</b></td>
@@ -348,6 +352,9 @@ tr:last-child td{border-bottom:none}
 .roster{margin-top:12px;display:grid;gap:7px}
 .player{display:flex;align-items:center;gap:10px;font-size:14px}
 .player .pn{width:96px;flex:none;font-weight:600}
+.player .pn small{display:block;font-size:10.5px;font-weight:500;color:#57534e;margin-top:1px}
+.player.out .pp{color:#78716c}
+.teamcard .left{font-size:12px;color:#a8a29e;margin:-4px 0 8px 21px}
 .player .track{flex:1;height:9px;background:#262220;border-radius:6px;overflow:hidden}
 .player .fill{height:100%;border-radius:6px}
 .player .pp{width:40px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
