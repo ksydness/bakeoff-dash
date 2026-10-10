@@ -51,7 +51,8 @@ the scoring engine. This app is a read-only presentation layer.
 - **History-Dash** tab (`Season | Place | Team | Points`) powers the all-time page via
   `HISTORY_CSV_URL`.
 - Env vars (Vercel dashboard): `SEASONS_CSV_URL` (required), `HISTORY_CSV_URL` (optional),
-  `SUPABASE_SERVICE_ROLE_KEY` + `COMMISSIONER_KEY` (live draft secrets). Public Supabase URL/anon
+  `SUPABASE_SERVICE_ROLE_KEY` + `COMMISSIONER_KEY` (live draft secrets; the key also authorizes
+  score notifications), `VAPID_PRIVATE_KEY` (Web Push; 🔔 hidden while unset). Public Supabase URL/anon
   key ship in `lib/draftConfig.ts` (the `NEXT_PUBLIC_SUPABASE_*` vars still set in Vercel are
   optional overrides).
 - **Live multi-device draft** (built here first, 2026-08-31, then ported to survivor): shared
@@ -102,3 +103,30 @@ Verified Season 1 totals — any change must keep these intact: **Lenny 213.5 ·
 Small shippable changes · `npx tsc --noEmit` before pushing · verify the Vercel deploy went
 green · validate new sheet URLs against the real parsers (and totals against History) before
 declaring them working.
+
+## Score notifications (Web Push, 2026-10-10)
+
+Friends tap **🔔 Notify me** in the dashboard header to get a push when each week's scores are
+posted. Android works in the browser; iPhone only after Add to Home Screen (iOS 16.4+) — a Safari
+tab gets install instructions instead. The button hides itself until `VAPID_PRIVATE_KEY` is set.
+
+- **Trigger (sheet side)**: the Apps Script's *Update Scores* menu item now calls
+  `updateScoresAndNotify()` — runs the original scoring function untouched, and only if it added a
+  new week schedules a one-minute time trigger (`notifyLeagueRetry`) that POSTs
+  `/api/push/notify { key, week }`. Published CSV lags the sheet by a few minutes, so the route
+  answers `pending` until the site sees that week; the trigger retries each minute (max 15).
+  *Send Score Notification* (menu) resends the latest week manually (`force`). The commissioner
+  key is asked once and kept in Script Properties. Retroactive Update never notifies.
+- **Route** `app/api/push/notify`: key = `COMMISSIONER_KEY`; season defaults to the newest
+  `active` registry row; week read via `getSeasonPayload` (lib/data.ts, no re-scoring). The message
+  is deliberately short ("🧁 Series 17 · Week 3 scores are in" / "Tap to see the leaderboard."); tapping
+  opens `/s/<n>?sync=1`, which the dashboard treats as a Refresh (bypasses the 3-min cache) and
+  then strips from the URL. Each `(league, season, week)` is sent once (`push_sends` table).
+  `GET /api/push/notify?season=N` previews the message without sending.
+- **Storage**: tables `push_subscriptions` (endpoint, league, keys) and `push_sends` in the shared
+  **bakeoff-drafts** Supabase project, RLS on with no policies (service role only). Dead
+  subscriptions (404/410) are pruned on send.
+- Files: `lib/pushConfig.ts` (public VAPID key + title/accent — the only per-league differences),
+  `lib/push.ts`, `app/api/push/{subscribe,notify}/route.ts`, `app/s/[season]/PushToggle.tsx`,
+  `public/sw.js` (push + click only, no offline cache). Identical in both repos apart from
+  `pushConfig.ts`; both use the same VAPID key pair.
