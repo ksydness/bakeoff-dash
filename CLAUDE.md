@@ -28,11 +28,18 @@ the scoring engine. This app is a read-only presentation layer.
    week scan caps at column 10, not 14.
 3. **Episodes has a Total column (K) with SUM formulas.** The script's season reset clears only
    the 9 week columns so those formulas survive.
-4. **2 teams, 5 picks each.** Team colors in `dashboard.tsx`: Lenny = tent pink `#f9a8d4`,
-   Daegan = tent blue `#93c5fd`.
+4. **2 teams, 5 picks each.** Team colors in `app/s/[season]/dash/model.ts` (`TEAM_COLORS`):
+   Lenny = tent pink `#f9a8d4`, Daegan = tent blue `#93c5fd`.
 5. **Branding**: 🧁, "Fantasy Bake Off", the Contestants tab is displayed as **Bakers** (the
    sheet tab, payload fields, and the literal `Top Contestant` / `Top Team` Leaderboard labels
    are unchanged — the parsers match those strings).
+5b. **Dashboard UX refresh ported from survivor-dash (survivor PRs #6/#7, 2026-10-13).**
+   `dashboard.tsx` is the shell; each tab lives in `app/s/[season]/dash/` — same files as
+   survivor apart from: 🧁, "Bakers" tab / "Top baker", Lenny/Daegan colors, `--accent`/`--accent2`
+   = tent pink/blue in `dash/styles.ts` (Stats heatmap + History fallback use pink too), no
+   `PushToggle` bell (Bake Off has no push), **singular** recap verbs in `dash/model.ts` ("Lenny
+   stays on top" — teams are one person), and a one-season History label ("Season 1", not
+   "Seasons 1–1"). Port future dashboard changes to both repos, keeping these differences.
 6. **No `future-db/`, no `prototype/`** — those were survivor-specific.
 7. **Draft room localStorage keys**: role `bakeoff-live-role-s<n>` (`t<i>`, `watch`, `commish`,
    `commish:<i>`), commissioner key `bakeoff-commish-key`. `LEAGUE = 'bakeoff'` in
