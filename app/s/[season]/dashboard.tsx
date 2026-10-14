@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { SeasonPayload } from '@/lib/types';
+import { usePullRefresh } from '../../PullToRefresh';
 import { CSS } from './dash/styles';
 import { IconBack, IconNext, IconPrev, IconRefresh, IconRules } from './dash/bits';
 import { asOf, weekLabel } from './dash/model';
@@ -54,9 +55,18 @@ export default function Dashboard({ season }: { season: number }) {
     if (sync) { url.searchParams.delete('sync'); window.history.replaceState(null, '', url); }
     const t = url.searchParams.get('tab');
     if (isTab(t)) setTabState(t);
+    // ?tab=teams&team=X (homepage standings rows) opens that team's breakdown; drop the param once read
+    const team = url.searchParams.get('team');
+    if (team) {
+      if (t === 'teams') setFocusTeam(team);
+      url.searchParams.delete('team'); window.history.replaceState(null, '', url);
+    }
     load(sync);
     /* eslint-disable-next-line */
   }, [season]);
+
+  // pull-to-refresh in the home-screen app = the Refresh button (re-sync scores, bypass the cache)
+  usePullRefresh(() => load(true));
 
   // ?week=N opens the dashboard rewound to that sheet week (shareable link)
   useEffect(() => {
