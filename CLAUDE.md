@@ -40,6 +40,16 @@ the scoring engine. This app is a read-only presentation layer.
    `PushToggle` bell (Bake Off has no push), **singular** recap verbs in `dash/model.ts` ("Lenny
    stays on top" — teams are one person), and a one-season History label ("Season 1", not
    "Seasons 1–1"). Port future dashboard changes to both repos, keeping these differences.
+5c. **Homepage ported from survivor-dash #9 (2026-10-13)**: `app/page.tsx` + `app/_home/`
+   (styles scoped under `.home`, `DraftRefresh.tsx`) — current-season card with mini standings
+   and the Open button above the fold, live draft card while drafting, all-time titles, past
+   seasons with champions. Differences: 🧁 / "Fantasy Bake Off", pink/blue `--accent` tokens, **no
+   Notify card** (Bake Off has no push), and past-season rows label themselves from the registry
+   Name ("Series 16") instead of "Season 1". `historyModel` takes `{ history }` and `getHistory` is
+   exported from `lib/data.ts` (both as in survivor). The dashboard reads `?tab=teams&team=X`.
+5d. **Pull to refresh + Vercel Analytics** (2026-10-13): `app/PullToRefresh.tsx` (identical to
+   survivor's — home-screen app only; dashboard = re-sync scores, elsewhere `router.refresh()`) and
+   `<Analytics />` in `app/layout.tsx` (PR #5).
 6. **No `future-db/`, no `prototype/`** — those were survivor-specific.
 7. **Draft room localStorage keys**: role `bakeoff-live-role-s<n>` (`t<i>`, `watch`, `commish`,
    `commish:<i>`), commissioner key `bakeoff-commish-key`. `LEAGUE = 'bakeoff'` in
