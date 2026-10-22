@@ -50,6 +50,13 @@ the scoring engine. This app is a read-only presentation layer.
 5d. **Pull to refresh + Vercel Analytics** (2026-10-13): `app/PullToRefresh.tsx` (identical to
    survivor's — home-screen app only; dashboard = re-sync scores, elsewhere `router.refresh()`) and
    `<Analytics />` in `app/layout.tsx` (PR #5).
+5e. **Spoiler shield ported from survivor-dash #22 (2026-10-22)**: a live season only shows each phone the
+   weeks it has revealed (cookie `bakeoff-seen-s<n>`; no cookie = all but the newest week). Files:
+   `app/s/[season]/dash/spoiler.ts`, `app/RevealSplash.tsx` (+ `SHIELD_CSS`), `app/_home/SeasonCard.tsx`;
+   the homepage reads the cookie, the dashboard runs the payload through `shielded()` before the week
+   stepper; live-season link previews drop the leader. Differences: 🧁, pink/blue gradients, splash copy
+   "The judges are tasting…" / "Leaving the tent" 👋 / "Top baker" / "Won the week"; no push to change.
+   Full write-up in survivor-dash's CLAUDE.md ("Spoiler shield").
 6. **No `future-db/`, no `prototype/`** — those were survivor-specific.
 7. **Draft room localStorage keys**: role `bakeoff-live-role-s<n>` (`t<i>`, `watch`, `commish`,
    `commish:<i>`), commissioner key `bakeoff-commish-key`. `LEAGUE = 'bakeoff'` in
