@@ -12,6 +12,7 @@ import { IconBack, IconNext, IconPrev, IconRefresh, IconRules } from './dash/bit
 import { asOf, weekLabel } from './dash/model';
 import { readSeen, revealInfo, shieldFor, shielded, writeSeen, type RevealInfo } from './dash/spoiler';
 import RevealSplash, { SHIELD_CSS } from '../../RevealSplash';
+import { unlockRevealSound } from '@/lib/revealSound';
 import Leaderboard from './dash/Leaderboard';
 import Teams from './dash/Teams';
 import Contestants from './dash/Contestants';
@@ -26,6 +27,13 @@ const TABS: [Tab, string][] = [
 ];
 const isTab = (v: string | null): v is Tab => !!v && TABS.some(([id]) => id === v);
 
+// extra styles for this page: the recap's Replay button
+const PAGE_CSS = `
+.dash .recap .phrow{margin-bottom:0;align-items:center}
+.dash .recap .replay{flex:none;height:30px;padding:0 12px;border:1px solid var(--line2);border-radius:999px;background:transparent;color:var(--soft);font:inherit;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer}
+.dash .recap .replay:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+`;
+
 export default function Dashboard({ season }: { season: number }) {
   const [data, setData] = useState<SeasonPayload | null>(null);
   const [tab, setTabState] = useState<Tab>('leaderboard');
@@ -35,7 +43,7 @@ export default function Dashboard({ season }: { season: number }) {
   const [view, setView] = useState<number | null>(null);  // position in scored_weeks; null = latest
   const tabsRef = useRef<HTMLElement | null>(null);
   const [seenTick, setSeenTick] = useState(0);  // bumps after a reveal so the cookie is re-read
-  const [splash, setSplash] = useState<RevealInfo | null>(null);
+  const [splash, setSplash] = useState<{ steps: RevealInfo[]; replay: boolean } | null>(null);  // frozen when opened
 
   // spoiler shield: a live season only shows the weeks this phone has revealed (see dash/spoiler.ts)
   const shield = useMemo(() => (data?.meta ? shieldFor(data, readSeen(season)) : null), [data, season, seenTick]);
@@ -120,6 +128,7 @@ export default function Dashboard({ season }: { season: number }) {
   if (loading || !data?.meta || !base) return (
     <div className="dash">
       <style>{CSS}</style>
+      <style>{PAGE_CSS}</style>
       {appBar}
       <div className="wrap">
         {loading
@@ -134,11 +143,24 @@ export default function Dashboard({ season }: { season: number }) {
   const k = view === null ? last : Math.min(view, last);
   const v = view === null ? base : asOf(base, k);  // what every tab renders
   const nextHidden = shield?.on ? shield.hidden[0] : null;
-  function revealed() {
-    if (splash) writeSeen(season, splash.week);
-    setSplash(null);
+  // Reveal = this hidden week and every later one (the splash chains them); Replay = one revealed week again
+  function openReveal() {
+    if (!shield?.on) return;
+    unlockRevealSound();
+    setSplash({ steps: shield.hidden.map(h => revealInfo(data!, h)), replay: false });
+  }
+  function openReplay(pos: number) {
+    unlockRevealSound();
+    setSplash({ steps: [revealInfo(data!, pos)], replay: true });
+  }
+  function landed(info: RevealInfo) {
+    writeSeen(season, info.week);
     setSeenTick(t => t + 1);
-    goTo(null);
+  }
+  function closeReveal() {
+    const wasReplay = splash?.replay;
+    setSplash(null);
+    if (!wasReplay) goTo(null);
   }
   const tabs = TABS.filter(([id]) => id !== 'draft' || !!data.draft);
   const cur: Tab = tab === 'draft' && !data.draft ? 'leaderboard' : tab;
@@ -150,6 +172,7 @@ export default function Dashboard({ season }: { season: number }) {
   return (
     <div className="dash">
       <style>{CSS}</style>
+      <style>{PAGE_CSS}</style>
       {appBar}
       <div className="wrap">
         <nav className={`weekbar ${k < last ? 'past' : ''}`} aria-label="Week">
@@ -166,7 +189,7 @@ export default function Dashboard({ season }: { season: number }) {
               <b>Week {weekLabel(data, (data.meta.scored_weeks ?? [])[nextHidden])} scores are in</b>
               <span>{last >= 0 ? `Showing through Week ${weekLabel(base, sw[last])}.` : 'Nothing shown yet.'} Watched it?</span>
             </span>
-            <button type="button" className="sbtn" onClick={() => setSplash(revealInfo(data, nextHidden))}>Reveal</button>
+            <button type="button" className="sbtn" onClick={openReveal}>Reveal</button>
           </div>
         )}
 
@@ -179,7 +202,7 @@ export default function Dashboard({ season }: { season: number }) {
         </div>
 
         <main>
-          {cur === 'leaderboard' && <Leaderboard d={v} goTeams={team => setTab('teams', team)} />}
+          {cur === 'leaderboard' && <Leaderboard d={v} goTeams={team => setTab('teams', team)} onReplay={sw.length ? () => openReplay(k) : undefined} />}
           {cur === 'teams' && <Teams d={v} focusTeam={focusTeam} />}
           {cur === 'contestants' && <Contestants d={v} />}
           {cur === 'draft' && data.draft && <Draft d={v} />}
@@ -187,7 +210,7 @@ export default function Dashboard({ season }: { season: number }) {
           {cur === 'history' && <History d={v} />}
         </main>
       </div>
-      {splash && <RevealSplash info={splash} onDone={revealed} />}
+      {splash && <RevealSplash steps={splash.steps} replay={splash.replay} onStep={splash.replay ? undefined : landed} onClose={closeReveal} />}
     </div>
   );
 }
