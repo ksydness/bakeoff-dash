@@ -57,6 +57,15 @@ the scoring engine. This app is a read-only presentation layer.
    stepper; live-season link previews drop the leader. Differences: 🧁, pink/blue gradients, splash copy
    "The judges are tasting…" / "Leaving the tent" 👋 / "Top baker" / "Won the week"; no push to change.
    Full write-up in survivor-dash's CLAUDE.md ("Spoiler shield").
+5f. **Leaderboard-first reveal ported from survivor-dash #28 (2026-11-01)**: the splash leads with the board —
+   beat → last week's board with "+0" → each player's week counts up paced by points (`countMs`, ~110ms a
+   point, 0.7–4s; half points count in halves) with live overtakes → leader glow + headline → Leaving the tent /
+   Top baker / Won the week underneath. Every hidden week chains ("Reveal Week N" / "Done for now"; cookie
+   written as each lands). Sound via `lib/revealSound.ts` (mute key `bakeoff-reveal-sound`). The homepage's
+   reveal closes into the dashboard ("Open Series N ›"); the dashboard's just closes. Leaderboard recap has
+   "▶ Replay reveal" (writes nothing; works on final seasons too). `RevealInfo` carries `before`/`after`
+   standings. Differences from survivor: 🧁 + pink/blue, Bake Off labels, full names (no `shortName` here),
+   wider fact labels, the shield strip still shows on every tab (survivor's week-bar pill isn't ported).
 6. **No `future-db/`, no `prototype/`** — those were survivor-specific.
 7. **Draft room localStorage keys**: role `bakeoff-live-role-s<n>` (`t<i>`, `watch`, `commish`,
    `commish:<i>`), commissioner key `bakeoff-commish-key`. `LEAGUE = 'bakeoff'` in
